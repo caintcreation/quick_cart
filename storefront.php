@@ -134,7 +134,8 @@ $whatsapp = preg_replace('/\D+/', '', (string)$shop['whatsapp_number']);
     <?php foreach ($products as $p): 
       $categorySlug = 'general';
       foreach ($categories as $cat) {
-          if ($cat['id'] == $p['category_id'] || strtolower($cat['name']) === strtolower($p['category'])) {
+          $catId = $p['category_id'] ?? null;
+          if (($catId !== null && (int)$cat['id'] === (int)$catId) || (!empty($p['category']) && strtolower($cat['name']) === strtolower($p['category']))) {
               $categorySlug = $cat['slug'];
               break;
           }

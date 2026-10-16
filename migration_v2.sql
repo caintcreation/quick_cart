@@ -1,6 +1,28 @@
 -- QuickCart Studio - Database Schema Update v2.0
--- Safe migrations adding Categories, Order Items, Pricing Plans, Enquiries, Payment Records, Audit Logs
+-- Safe migrations adding Categories, Order Items, Pricing Plans, Enquiries, Payment Records, Audit Logs & Column additions
 
+-- 1. Table Alterations
+ALTER TABLE products
+  ADD COLUMN IF NOT EXISTS category_id INT UNSIGNED NULL AFTER shop_id,
+  ADD COLUMN IF NOT EXISTS compare_at_price DECIMAL(10,2) NULL AFTER price,
+  ADD INDEX IF NOT EXISTS idx_products_category (category_id);
+
+ALTER TABLE orders
+  MODIFY COLUMN status ENUM('pending','confirmed','processing','completed','cancelled') NOT NULL DEFAULT 'pending',
+  ADD COLUMN IF NOT EXISTS currency VARCHAR(8) NOT NULL DEFAULT 'KES' AFTER total,
+  ADD COLUMN IF NOT EXISTS customer_address TEXT NULL AFTER customer_phone,
+  ADD COLUMN IF NOT EXISTS customer_notes TEXT NULL AFTER customer_address;
+
+ALTER TABLE shops
+  ADD COLUMN IF NOT EXISTS contact_email VARCHAR(190) NULL AFTER accent_color,
+  ADD COLUMN IF NOT EXISTS contact_phone VARCHAR(40) NULL AFTER contact_email,
+  ADD COLUMN IF NOT EXISTS address TEXT NULL AFTER contact_phone;
+
+ALTER TABLE admins
+  MODIFY COLUMN shop_id INT UNSIGNED NULL,
+  ADD COLUMN IF NOT EXISTS full_name VARCHAR(120) NULL AFTER role;
+
+-- 2. New Supporting Tables
 CREATE TABLE IF NOT EXISTS categories (
   id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   shop_id INT UNSIGNED NOT NULL,
