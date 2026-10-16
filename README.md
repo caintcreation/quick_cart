@@ -1,91 +1,153 @@
-# QuickCart Studio — PHP/MySQL starter
+# QuickCart Studio — Production-Ready Multi-Tenant E-Commerce Platform
 
-A small reusable WhatsApp-first product catalogue starter. This starter includes a public storefront, product search, WhatsApp order links, a MySQL schema, and a basic admin login/dashboard. It is a foundation, not yet a production-ready multi-tenant SaaS.
+QuickCart Studio is a commercial, multi-tenant online shop builder designed for small businesses, fashion boutiques, shoe and accessory sellers, cosmetics brands, electronics retailers, and social media (Instagram, TikTok, Facebook) merchants.
 
-## Requirements
-- PHP 8.1+ with PDO MySQL
-- MySQL/MariaDB (XAMPP is suitable locally)
-- A browser
+It turns online product catalogues into instant, 1-tap **prefilled WhatsApp orders**, removing checkout friction, eliminating third-party card processing fees, and providing shop owners with real-time inventory and order management.
 
-## Run locally with XAMPP
-1. Copy this folder into `C:\xampp\htdocs\quickcart-studio`.
-2. Start Apache and MySQL in XAMPP.
-3. Open phpMyAdmin at `http://localhost/phpmyadmin` and import `database.sql`.
-4. Check `includes/config.php`; the defaults match a typical fresh XAMPP installation. Change them if your MySQL credentials differ.
-5. Open `http://localhost/quickcart-studio/`.
-6. The demo shop is at `http://localhost/quickcart-studio/?shop=demo`.
+---
 
-For an existing database, import [`migration.sql`](migration.sql) after taking a
-backup. A fresh installation should import `database.sql` instead. Products
-created through the admin dashboard include stock and can be published or
-hidden. Customers submit a validated order to `order.php`; the order is
-saved
-before the encoded WhatsApp handoff opens.
+## 🌟 Key Highlights & Architecture
 
-### Troubleshooting: `PDOException: could not find driver`
+- **True Multi-Tenancy**: Centralized MySQL database with strict foreign-key tenant isolation. Platform owners can provision unlimited independent customer shops (`?shop=slug`).
+- **Zero-Friction WhatsApp Checkout**: Real server-side URL encoding creates clean, pre-filled WhatsApp messages containing product names, quantities, currency calculations, and order reference tracking IDs (`QC-XXXXXX`).
+- **Atomic Stock Reservation**: Orders decrement stock using transactional MySQL isolation (`stock = stock - ? WHERE stock >= ?`), preventing overselling during concurrent traffic.
+- **Enterprise-Grade Admin Panels**:
+  - **Platform Owner Dashboard**: Multi-tenant metrics, shop creation, shop publication toggles, dynamic pricing package manager, lead enquiry manager, and service revenue ledger.
+  - **Shop Merchant Dashboard**: Real-time sales analytics, product management with secure image uploads, category sorting, order status lifecycles, and printable packing slips.
+- **Modern Responsive Design**: Light & Dark mode toggle (persisted via `localStorage`), CSS custom properties, touch-friendly mobile layouts, and crisp SVG icons (zero emoji reliance).
+- **Security & Data Integrity**: CSRF token validation on all state-changing POST requests, MIME binary inspection for uploads, execution-disabled upload directories (`.htaccess`), and bcrypt/Argon2 password hashing.
 
-This means the PHP runtime used by Apache does not have the MySQL PDO driver
-loaded. In XAMPP:
+---
 
-1. Open **XAMPP Control Panel** and click **Config** next to Apache, then open
-   `php.ini` (the file should normally be `C:\xampp\php\php.ini`).
-2. Find `extension=pdo_mysql`. If it starts with `;`, remove the semicolon.
-   Also confirm that `extension_dir="C:\xampp\php\ext"` points to the XAMPP
-   `ext` directory.
-3. Save the file and restart Apache. Restart it even if the setting was
-   already enabled, because PHP reads `php.ini` only when Apache starts.
-4. If the error remains, open `http://localhost/dashboard/phpinfo.php` (or
-   create a temporary page containing `<?php phpinfo();`) and check **Loaded
-   Configuration File**. Enable `pdo_mysql` in that file instead; Apache may
-   be using a different PHP installation.
+## 🚀 Local Installation Guide (XAMPP on Windows)
 
-Do not rely only on `php -m` in a terminal: the command-line PHP executable
-can use a different `php.ini` from the PHP installation used by Apache.
+### 1. Requirements
+- Windows 10/11
+- [XAMPP](https://www.apachefriends.org/) with **Apache** and **MySQL** (PHP 8.1+ with `pdo_mysql`, `mbstring`, `fileinfo` enabled)
+- A modern web browser
 
-## Create the first admin account
-Generate a password hash using PHP from a terminal in the project folder:
+### 2. Project Location
+Ensure this project directory is located at:
+```text
+C:\xampp\htdocs\quickcart-studio
+```
 
+### 3. Database Setup (via phpMyAdmin)
+1. Start **Apache** and **MySQL** in the XAMPP Control Panel.
+2. Open your browser and navigate to `http://localhost/phpmyadmin/`.
+3. Create a new database named `quickcart` with collation `utf8mb4_unicode_ci`.
+4. Click on the `quickcart` database, select **Import**, choose [`database.sql`](file:///c:/xampp/htdocs/quickcart-studio/database.sql), and click **Go**.
+
+*Note for existing databases*: If you already had an earlier version of the database installed, run [`migration_v2.sql`](file:///c:/xampp/htdocs/quickcart-studio/migration_v2.sql) to add the latest tables.
+
+### 4. Configuration
+Database settings are located in [`includes/config.php`](file:///c:/xampp/htdocs/quickcart-studio/includes/config.php). The defaults match standard local XAMPP credentials:
+```php
+define('DB_HOST', '127.0.0.1');
+define('DB_NAME', 'quickcart');
+define('DB_USER', 'root');
+define('DB_PASS', '');
+```
+
+### 5. Accessing the Application
+- **Public Marketing Website**: `http://localhost/quickcart-studio/` or `http://localhost/quickcart-studio/home.php`
+- **Demo Storefront**: `http://localhost/quickcart-studio/index.php?shop=demo`
+- **Merchant / Owner Sign In**: `http://localhost/quickcart-studio/admin/login.php`
+
+---
+
+## 🔐 Administrative Accounts
+
+### Platform Owner Account (Super Admin)
+- **Email**: `admin@quickcartstudio.com`
+- **Password**: `Admin2026!Secure`
+- *Capabilities*: Provision new customer shops, edit pricing tiers, view service payment ledgers, and manage incoming leads.
+
+### Demo Shop Admin Account
+- **Email**: `maduvwe88@gmail.com`
+- *Capabilities*: Manage products, stock, categories, orders, and shop settings for the demo boutique.
+
+To create or change any admin password via CLI:
 ```bash
-php -r "echo password_hash('CHANGE-THIS-PASSWORD', PASSWORD_DEFAULT), PHP_EOL;"
+C:\xampp\php\php.exe -r "echo password_hash('YourNewPassword', PASSWORD_DEFAULT), PHP_EOL;"
+```
+Then update the `password_hash` column in the `admins` table.
+
+---
+
+## 📁 Project Structure
+
+```text
+quickcart-studio/
+├── admin/
+│   ├── categories.php          # Category manager with slug & sort ordering
+│   ├── dashboard.php           # Shop-specific analytics, KPIs & recent orders
+│   ├── login.php               # Secure sign in with CSRF & session regeneration
+│   ├── logout.php              # Session cookie destruction & audit log
+│   ├── orders.php              # Order lifecycles, line items & printable packing slips
+│   ├── platform_enquiries.php  # Public contact inquiries & lead manager
+│   ├── platform_overview.php   # Multi-shop console & new shop provisioning
+│   ├── platform_payments.php   # Service payments & revenue ledger
+│   ├── platform_plans.php      # Dynamic pricing package editor
+│   ├── product.php             # Backward compatibility redirect
+│   ├── products.php            # Product CRUD, stock controls & validated image uploads
+│   └── settings.php            # Shop branding, accent colors, logo & WhatsApp configuration
+├── assets/
+│   ├── app.js                  # Theme switcher, mobile nav, live filtering & file preview
+│   └── style.css               # Complete responsive design system (Light/Dark themes)
+├── includes/
+│   ├── config.php              # PDO singleton, auth guards, CSRF & upload security
+│   └── icons.php               # Crisp vector SVG icons library
+├── templates/
+│   ├── admin_footer.php        # Admin layout footer
+│   ├── admin_header.php        # Admin sidebar, mobile drawer & topbar
+│   ├── error_403.php           # 403 Forbidden template
+│   ├── error_404.php           # 404 Not Found template
+│   ├── footer.php              # Public marketing footer
+│   └── header.php              # Public marketing navigation & theme toggle
+├── uploads/
+│   └── .htaccess               # Execution protection (prevents PHP execution in uploads)
+├── about.php                   # Mission, target markets & platform value
+├── contact.php                 # Lead capture form with honeypot & server validation
+├── database.sql                # Complete SQL schema & initial demonstration data
+├── features.php                # Detailed overview of working technical capabilities
+├── home.php                    # Public landing page with showcase & pricing
+├── index.php                   # Smart router (serves marketing home or specific shop)
+├── migration.sql               # Legacy migration file
+├── migration_v2.sql            # Migration v2 (categories, orders, plans, payments)
+├── order.php                   # Atomic stock deduction & WhatsApp URL generation
+├── pricing.php                 # Transparent setup tiers, inclusion checklists & FAQs
+├── privacy.php                 # Privacy policy
+├── storefront.php              # Customer-facing product catalogue with search & filters
+└── terms.php                   # Terms of service
 ```
 
-Copy the generated hash, then run this SQL in phpMyAdmin (replace the email and hash):
+---
 
-```sql
-INSERT INTO admins (shop_id, email, password_hash)
-VALUES (1, 'owner@example.com', 'PASTE_GENERATED_HASH_HERE');
-```
+## 🛡️ Security Implementation Details
 
-Then sign in at `http://localhost/quickcart-studio/admin/login.php`.
+1. **Upload Hardening**:
+   - Files uploaded to `uploads/` are analyzed using PHP's `finfo` extension for genuine binary MIME types (`image/jpeg`, `image/png`, `image/webp`, `image/gif`).
+   - File extensions are strictly enforced and filenames are randomized (`bin2hex(random_bytes(16))`).
+   - `uploads/.htaccess` explicitly blocks execution of `.php`, `.phtml`, scripts, and CGI binaries.
+2. **Tenant Scoping**:
+   - Every shop-specific query explicitly checks `WHERE shop_id = :shop_id`.
+   - The active `shop_id` is derived from the server session, never trusted blindly from user-supplied GET/POST parameters.
+3. **CSRF Protection**:
+   - Cryptographically random CSRF tokens (`random_bytes(32)`) protect all state-changing POST forms.
+4. **Anti-Spam Form Security**:
+   - Contact form includes invisible honeypot traps that silently reject automated spam submissions.
 
-## Configure the WhatsApp number
-Edit the demo shop record in phpMyAdmin. Store the number with country code and digits only, e.g. `2547XXXXXXXX` for a Kenyan number. The starter currently uses a placeholder number.
+---
 
-```sql
-UPDATE shops SET whatsapp_number='2547XXXXXXXX' WHERE slug='demo';
-```
+## 🌐 Production Deployment Guide (cPanel / Apache / VPS)
 
-## Folder structure
-- `index.php` — public product catalogue
-- `database.sql` — tables and demo data
-- `includes/config.php` — PDO connection and helpers
-- `admin/login.php` — password-verified admin login
-- `admin/dashboard.php` — basic product listing
-- `admin/logout.php` — session logout
-- `assets/style.css` — responsive storefront styling
-- `assets/app.js` — live product search
-- `uploads/` — reserved for product images; upload handling is not implemented yet
-
-## Important next steps before taking real customers
-1. Implement CSRF tokens for all state-changing forms.
-2. Build create/edit/delete product routes with server-side validation and prepared statements.
-3. Add secure image upload checks (MIME detection, file-size limits, random filenames, and non-executable upload storage).
-4. Add shop creation and owner provisioning; never trust a shop ID supplied by the browser. Derive it from the authenticated session.
-5. Add rate limiting and login throttling; use HTTPS and secure session cookie settings in production.
-6. Move database credentials to environment variables and turn off PHP error display in production.
-7. Back up the database and test restore procedures.
-8. The demo storefront currently accepts `?shop=slug`; add a proper router and test tenant isolation before using it as a multi-customer SaaS.
-9. Orders table is a planned schema only; this starter does not yet save orders to the database. WhatsApp links open a conversation instead.
-
-## Deployment note
-Develop and demonstrate locally first. Choose hosting that explicitly supports PHP and MySQL/MariaDB. GitHub Pages cannot execute PHP. Check a host's current database, storage, inactivity, and free-tier restrictions before using it for customer data. A free tier is suitable for demos but may not be reliable enough for a paying customer's live shop.
+1. Upload the project files to your server's `public_html` directory.
+2. In your hosting MySQL manager, create a new database and import `database.sql`.
+3. Set environment variables (or update `includes/config.php`):
+   - `QC_DB_HOST`
+   - `QC_DB_NAME`
+   - `QC_DB_USER`
+   - `QC_DB_PASS`
+4. Ensure the `uploads/` directory has write permissions (`chmod 755 uploads`).
+5. Ensure SSL/HTTPS is enabled; QuickCart Studio will automatically configure strict `Secure` and `SameSite=Lax` cookies.

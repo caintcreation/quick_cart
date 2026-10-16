@@ -1,0 +1,9 @@
+# QuickCart Studio - Secure Uploads Directory
+Options -Indexes -ExecCGI
+AddHandler cgi-script .php .php3 .php4 .php5 .php7 .php8 .phtml .pl .py .jsp .asp .htm .shtml .sh .cgi
+RemoveHandler .php .phtml
+
+<FilesMatch "(?i)\.(php|phtml|php3|php4|php5|php7|php8|phps|pl|py|jsp|asp|sh|cgi)$">
+    Order Deny,Allow
+    Deny from all
+</FilesMatch>
