@@ -18,6 +18,22 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
+// Optional .env loader for easy production deployment
+if (file_exists(__DIR__ . '/../.env')) {
+    $lines = file(__DIR__ . '/../.env', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    foreach ($lines as $line) {
+        $line = trim($line);
+        if ($line === '' || str_starts_with($line, '#')) continue;
+        if (str_contains($line, '=')) {
+            [$k, $v] = explode('=', $line, 2);
+            $k = trim($k);
+            $v = trim($v, " \t\n\r\0\x0B\"'");
+            putenv("{$k}={$v}");
+            $_ENV[$k] = $v;
+        }
+    }
+}
+
 // Database Credentials (override with env if present)
 define('DB_HOST', getenv('QC_DB_HOST') ?: '127.0.0.1');
 define('DB_NAME', getenv('QC_DB_NAME') ?: 'quickcart');
@@ -293,3 +309,4 @@ function handle_image_upload(array $file, string $subfolder = 'products', int $m
     $publicPath = 'uploads/' . trim($subfolder, '/') . '/' . $filename;
     return ['success' => true, 'path' => $publicPath, 'filename' => $filename];
 }
+

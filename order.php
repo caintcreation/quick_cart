@@ -19,68 +19,119 @@ if (!$shop) {
     exit('Shop not found.');
 }
 
-// 3. Validate product ID and requested quantity
-$productId = filter_var($_POST['product_id'] ?? null, FILTER_VALIDATE_INT);
-$quantity  = filter_var($_POST['quantity'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 999]]);
+// 3. Customer contact / delivery details
+$customerName    = trim((string)($_POST['customer_name'] ?? ''));
+$customerPhone   = trim((string)($_POST['customer_phone'] ?? ''));
+$customerEmail   = filter_input(INPUT_POST, 'customer_email', FILTER_VALIDATE_EMAIL) ?: null;
+$customerAddress = trim((string)($_POST['customer_address'] ?? ''));
+$customerNotes   = trim((string)($_POST['customer_notes'] ?? ''));
 
-if (!$productId || !$quantity) {
+// 4. Parse order items (Multi-item cart JSON or single item fallback)
+$itemsToProcess = [];
+
+if (!empty($_POST['cart_items'])) {
+    $rawCart = json_decode((string)$_POST['cart_items'], true);
+    if (is_array($rawCart) && !empty($rawCart)) {
+        foreach ($rawCart as $entry) {
+            $pId = filter_var($entry['product_id'] ?? null, FILTER_VALIDATE_INT);
+            $qty = filter_var($entry['quantity'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 999]]);
+            if ($pId && $qty) {
+                $itemsToProcess[] = ['product_id' => $pId, 'quantity' => $qty];
+            }
+        }
+    }
+}
+
+// Single item direct order fallback
+if (empty($itemsToProcess)) {
+    $productId = filter_var($_POST['product_id'] ?? null, FILTER_VALIDATE_INT);
+    $quantity  = filter_var($_POST['quantity'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 999]]);
+    if ($productId && $quantity) {
+        $itemsToProcess[] = ['product_id' => $productId, 'quantity' => $quantity];
+    }
+}
+
+if (empty($itemsToProcess)) {
     http_response_code(422);
-    exit('Please select a valid product and quantity between 1 and 999.');
+    exit('Please select at least one valid product and quantity.');
 }
 
-// 4. Query available product details with tenant lock
-$stmt = db()->prepare('SELECT id, name, price, stock, active FROM products WHERE id = ? AND shop_id = ? LIMIT 1');
-$stmt->execute([$productId, (int)$shop['id']]);
-$product = $stmt->fetch();
-
-if (!$product || !$product['active']) {
-    http_response_code(404);
-    exit('The requested product is currently inactive or unavailable.');
-}
-
-if ((int)$product['stock'] < $quantity) {
-    http_response_code(422);
-    exit("Sorry, only {$product['stock']} units remain available for this item.");
-}
-
-// 5. Build order snapshot data
-$unitPrice = (float)$product['price'];
-$subtotal  = $unitPrice * $quantity;
+// 5. Query and validate every item with tenant scoping
+$currency = !empty($shop['currency']) ? $shop['currency'] : 'KES';
 $reference = 'QC-' . strtoupper(bin2hex(random_bytes(4)));
-$currency  = !empty($shop['currency']) ? $shop['currency'] : 'KES';
+$grandTotal = 0.0;
+$validatedItems = [];
 
-$itemsPayload = [
-    [
-        'product_id' => (int)$product['id'],
-        'name'       => $product['name'],
-        'quantity'   => $quantity,
-        'price'      => $unitPrice,
+foreach ($itemsToProcess as $req) {
+    $stmt = db()->prepare('SELECT id, name, price, stock, active FROM products WHERE id = ? AND shop_id = ? LIMIT 1');
+    $stmt->execute([$req['product_id'], (int)$shop['id']]);
+    $prod = $stmt->fetch();
+
+    if (!$prod || !$prod['active']) {
+        http_response_code(404);
+        exit('One or more requested products are currently inactive or unavailable.');
+    }
+
+    if ((int)$prod['stock'] < $req['quantity']) {
+        http_response_code(422);
+        exit("Sorry, only {$prod['stock']} units remain available for '{$prod['name']}'. Please adjust your quantity.");
+    }
+
+    $unitPrice = (float)$prod['price'];
+    $subtotal = $unitPrice * $req['quantity'];
+    $grandTotal += $subtotal;
+
+    $validatedItems[] = [
+        'product_id' => (int)$prod['id'],
+        'name'       => $prod['name'],
+        'quantity'   => $req['quantity'],
+        'unit_price' => $unitPrice,
         'subtotal'   => $subtotal,
-    ]
-];
-$itemsJson = json_encode($itemsPayload, JSON_THROW_ON_ERROR);
+    ];
+}
+
+$itemsJson = json_encode($validatedItems, JSON_THROW_ON_ERROR);
 
 // 6. Execute atomic stock reservation & order insertion inside a transaction
 db()->beginTransaction();
 try {
-    // Atomic deduction guarding against race conditions
-    $reserve = db()->prepare('UPDATE products SET stock = stock - ? WHERE id = ? AND shop_id = ? AND stock >= ?');
-    $reserve->execute([$quantity, (int)$product['id'], (int)$shop['id'], $quantity]);
+    foreach ($validatedItems as $item) {
+        $reserve = db()->prepare('UPDATE products SET stock = stock - ? WHERE id = ? AND shop_id = ? AND stock >= ?');
+        $reserve->execute([$item['quantity'], $item['product_id'], (int)$shop['id'], $item['quantity']]);
 
-    if ($reserve->rowCount() !== 1) {
-        db()->rollBack();
-        http_response_code(409);
-        exit('Item stock changed while your order was processing. Please refresh and try again.');
+        if ($reserve->rowCount() !== 1) {
+            db()->rollBack();
+            http_response_code(409);
+            exit("Stock changed for '{$item['name']}' while processing. Please refresh and try again.");
+        }
     }
 
     // Insert order record
-    $insOrder = db()->prepare('INSERT INTO orders (shop_id, items_json, total, currency, reference, status) VALUES (?, ?, ?, ?, ?, ?)');
-    $insOrder->execute([(int)$shop['id'], $itemsJson, $subtotal, $currency, $reference, 'pending']);
-    $orderId = db()->lastInsertId();
+    $insOrder = db()->prepare('
+        INSERT INTO orders (shop_id, customer_name, customer_phone, customer_email, customer_address, customer_notes, items_json, total, currency, reference, status, payment_status) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ');
+    $insOrder->execute([
+        (int)$shop['id'],
+        $customerName ?: null,
+        $customerPhone ?: null,
+        $customerEmail,
+        $customerAddress ?: null,
+        $customerNotes ?: null,
+        $itemsJson,
+        $grandTotal,
+        $currency,
+        $reference,
+        'pending',
+        'unpaid'
+    ]);
+    $orderId = (int)db()->lastInsertId();
 
     // Insert order items line snapshot
     $insItem = db()->prepare('INSERT INTO order_items (order_id, product_id, product_name, quantity, unit_price, subtotal) VALUES (?, ?, ?, ?, ?, ?)');
-    $insItem->execute([(int)$orderId, (int)$product['id'], $product['name'], $quantity, $unitPrice, $subtotal]);
+    foreach ($validatedItems as $item) {
+        $insItem->execute([(int)$orderId, $item['product_id'], $item['name'], $item['quantity'], $item['unit_price'], $item['subtotal']]);
+    }
 
     db()->commit();
 } catch (Throwable $e) {
@@ -99,16 +150,39 @@ if ($whatsapp === '') {
 }
 
 // 8. Generate neatly formatted WhatsApp pre-filled text
-$messageLines = [
-    "Hello {$shop['name']}, I would like to place an order:",
-    "",
-    "• {$quantity}x {$product['name']} — {$currency} " . number_format($unitPrice, 2) . " each",
-    "",
-    "Total Order Amount: {$currency} " . number_format($subtotal, 2),
-    "Order Reference: {$reference}",
-    "",
-    "Please let me know how to proceed with payment and delivery. (Note: sending this message does not guarantee order acceptance)."
-];
+$itemCount = count($validatedItems);
+$messageLines = [];
+$messageLines[] = "👋 Hello {$shop['name']}, I would like to place an order:";
+$messageLines[] = "";
+$messageLines[] = "🛒 *ORDER SUMMARY* (Ref: *{$reference}*)";
+$messageLines[] = "──────────────────────────";
+
+foreach ($validatedItems as $item) {
+    $messageLines[] = "• {$item['quantity']}x {$item['name']} — {$currency} " . number_format($item['unit_price'], 2) . " (Subtotal: {$currency} " . number_format($item['subtotal'], 2) . ")";
+}
+
+$messageLines[] = "──────────────────────────";
+$messageLines[] = "*Total Amount:* {$currency} " . number_format($grandTotal, 2);
+$messageLines[] = "";
+
+if (!empty($customerName) || !empty($customerPhone) || !empty($customerAddress) || !empty($customerNotes)) {
+    $messageLines[] = "📋 *CUSTOMER DETAILS*";
+    if (!empty($customerName)) {
+        $messageLines[] = "• *Name:* {$customerName}";
+    }
+    if (!empty($customerPhone)) {
+        $messageLines[] = "• *Phone:* {$customerPhone}";
+    }
+    if (!empty($customerAddress)) {
+        $messageLines[] = "• *Delivery Address:* {$customerAddress}";
+    }
+    if (!empty($customerNotes)) {
+        $messageLines[] = "• *Notes / Requests:* {$customerNotes}";
+    }
+    $messageLines[] = "";
+}
+
+$messageLines[] = "Please confirm availability and dispatch. Thank you!";
 
 $prefilledText = implode("\n", $messageLines);
 $whatsappUrl = 'https://wa.me/' . $whatsapp . '?text=' . rawurlencode($prefilledText);

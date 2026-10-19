@@ -49,7 +49,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if (!$error) {
             $upd = db()->prepare('UPDATE shops SET name = ?, tagline = ?, description = ?, whatsapp_number = ?, currency = ?, accent_color = ?, published = ?, logo_path = ? WHERE id = ?');
-            $upd->execute([$name, $tagline ?: null, $description ?: null, $whatsappNumber, $currency, $accentColor, $published, $logoPath, $shopId]);
+            $upd->execute([
+                $name,
+                $tagline ?: null,
+                $description ?: null,
+                $whatsappNumber,
+                $currency,
+                $accentColor,
+                $published,
+                $logoPath,
+                $shopId
+            ]);
 
             log_audit('shop_settings_update', "Updated settings for shop '{$name}'", $shopId);
             set_flash('success', 'Shop settings and branding updated successfully.');

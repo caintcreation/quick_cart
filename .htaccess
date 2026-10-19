@@ -1,0 +1,33 @@
+# ==============================================================================
+# QuickCart Studio — Apache Production Configuration & Security Hardening
+# ==============================================================================
+
+# 1. Prevent Directory Indexing / Listing
+Options -Indexes
+
+# 2. Block sensitive files and directories
+<FilesMatch "^(\.env|\.git|\.htaccess|database\.sql|migration.*\.sql|composer\.lock)">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order deny,allow
+        Deny from all
+    </IfModule>
+</FilesMatch>
+
+# 3. Security HTTP Headers
+<IfModule mod_headers.c>
+    Header set X-Content-Type-Options "nosniff"
+    Header set X-XSS-Protection "1; mode=block"
+    Header set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
+# 4. Clean URL Rewriting for Shops & API (if mod_rewrite enabled)
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /
+
+    # Rewrite /shop/slug to index.php?shop=slug
+    RewriteRule ^shop/([a-zA-Z0-9_-]+)/?$ index.php?shop=$1 [QSA,L]
+</IfModule>

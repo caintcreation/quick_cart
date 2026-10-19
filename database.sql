@@ -21,6 +21,11 @@ CREATE TABLE IF NOT EXISTS shops (
   contact_email VARCHAR(190) DEFAULT NULL,
   contact_phone VARCHAR(40) DEFAULT NULL,
   address TEXT DEFAULT NULL,
+  paystack_enabled TINYINT(1) NOT NULL DEFAULT 0,
+  paystack_secret_key VARCHAR(255) DEFAULT NULL,
+  paystack_public_key VARCHAR(255) DEFAULT NULL,
+  google_sheets_webhook_url VARCHAR(255) DEFAULT NULL,
+  webhook_secret VARCHAR(64) DEFAULT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -78,6 +83,7 @@ CREATE TABLE IF NOT EXISTS orders (
   shop_id INT UNSIGNED NOT NULL,
   customer_name VARCHAR(120) DEFAULT NULL,
   customer_phone VARCHAR(40) DEFAULT NULL,
+  customer_email VARCHAR(190) DEFAULT NULL,
   customer_address TEXT DEFAULT NULL,
   customer_notes TEXT DEFAULT NULL,
   items_json JSON NOT NULL,
@@ -85,6 +91,10 @@ CREATE TABLE IF NOT EXISTS orders (
   currency VARCHAR(8) NOT NULL DEFAULT 'KES',
   reference VARCHAR(24) NOT NULL UNIQUE,
   status ENUM('pending','confirmed','processing','completed','cancelled') NOT NULL DEFAULT 'pending',
+  payment_status ENUM('unpaid','paid','refunded') NOT NULL DEFAULT 'unpaid',
+  paystack_reference VARCHAR(100) DEFAULT NULL,
+  paystack_url VARCHAR(500) DEFAULT NULL,
+  paid_at TIMESTAMP NULL DEFAULT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_orders_shop_created (shop_id, created_at),
   CONSTRAINT fk_order_shop FOREIGN KEY (shop_id) REFERENCES shops(id) ON DELETE CASCADE

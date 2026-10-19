@@ -10,13 +10,23 @@ ALTER TABLE products
 ALTER TABLE orders
   MODIFY COLUMN status ENUM('pending','confirmed','processing','completed','cancelled') NOT NULL DEFAULT 'pending',
   ADD COLUMN IF NOT EXISTS currency VARCHAR(8) NOT NULL DEFAULT 'KES' AFTER total,
-  ADD COLUMN IF NOT EXISTS customer_address TEXT NULL AFTER customer_phone,
-  ADD COLUMN IF NOT EXISTS customer_notes TEXT NULL AFTER customer_address;
+  ADD COLUMN IF NOT EXISTS customer_email VARCHAR(190) NULL AFTER customer_phone,
+  ADD COLUMN IF NOT EXISTS customer_address TEXT NULL AFTER customer_email,
+  ADD COLUMN IF NOT EXISTS customer_notes TEXT NULL AFTER customer_address,
+  ADD COLUMN IF NOT EXISTS payment_status ENUM('unpaid','paid','refunded') NOT NULL DEFAULT 'unpaid' AFTER status,
+  ADD COLUMN IF NOT EXISTS paystack_reference VARCHAR(100) NULL AFTER payment_status,
+  ADD COLUMN IF NOT EXISTS paystack_url VARCHAR(500) NULL AFTER paystack_reference,
+  ADD COLUMN IF NOT EXISTS paid_at TIMESTAMP NULL DEFAULT NULL AFTER paystack_url;
 
 ALTER TABLE shops
   ADD COLUMN IF NOT EXISTS contact_email VARCHAR(190) NULL AFTER accent_color,
   ADD COLUMN IF NOT EXISTS contact_phone VARCHAR(40) NULL AFTER contact_email,
-  ADD COLUMN IF NOT EXISTS address TEXT NULL AFTER contact_phone;
+  ADD COLUMN IF NOT EXISTS address TEXT NULL AFTER contact_phone,
+  ADD COLUMN IF NOT EXISTS paystack_enabled TINYINT(1) NOT NULL DEFAULT 0 AFTER address,
+  ADD COLUMN IF NOT EXISTS paystack_secret_key VARCHAR(255) NULL AFTER paystack_enabled,
+  ADD COLUMN IF NOT EXISTS paystack_public_key VARCHAR(255) NULL AFTER paystack_secret_key,
+  ADD COLUMN IF NOT EXISTS google_sheets_webhook_url VARCHAR(255) NULL AFTER paystack_public_key,
+  ADD COLUMN IF NOT EXISTS webhook_secret VARCHAR(64) NULL AFTER google_sheets_webhook_url;
 
 ALTER TABLE admins
   MODIFY COLUMN shop_id INT UNSIGNED NULL,

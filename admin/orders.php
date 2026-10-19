@@ -8,16 +8,87 @@ $shopStmt = db()->prepare('SELECT * FROM shops WHERE id = ?');
 $shopStmt->execute([$shopId]);
 $shop = $shopStmt->fetch();
 
+// Handle CSV Export (OrderOnWhats.app feature parity)
+if (isset($_GET['action']) && $_GET['action'] === 'export_csv') {
+    $stmt = db()->prepare('SELECT * FROM orders WHERE shop_id = ? ORDER BY id DESC');
+    $stmt->execute([$shopId]);
+    $exportOrders = $stmt->fetchAll();
+
+    $filename = 'orders_' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $shop['slug']) . '_' . date('Y-m-d_His') . '.csv';
+
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Pragma: no-cache');
+    header('Expires: 0');
+
+    $output = fopen('php://output', 'w');
+    // Output BOM for Excel UTF-8 compatibility
+    fputs($output, "\xEF\xBB\xBF");
+
+    // CSV Headers
+    fputcsv($output, [
+        'Order Reference',
+        'Date & Time',
+        'Customer Name',
+        'Customer Phone',
+        'Customer Email',
+        'Delivery Address',
+        'Items Summary',
+        'Total Amount',
+        'Currency',
+        'Status',
+        'Payment Status',
+        'Customer Notes'
+    ]);
+
+    foreach ($exportOrders as $row) {
+        $rawItems = json_decode($row['items_json'] ?? '[]', true);
+        $itemParts = [];
+        if (is_array($rawItems)) {
+            foreach ($rawItems as $itm) {
+                $itemParts[] = ($itm['quantity'] ?? 1) . 'x ' . ($itm['name'] ?? 'Item');
+            }
+        }
+        $itemsStr = implode('; ', $itemParts);
+
+        fputcsv($output, [
+            $row['reference'],
+            $row['created_at'],
+            $row['customer_name'] ?? '',
+            $row['customer_phone'] ?? '',
+            $row['customer_email'] ?? '',
+            $row['customer_address'] ?? '',
+            $itemsStr,
+            number_format((float)$row['total'], 2, '.', ''),
+            $row['currency'] ?? $shop['currency'],
+            ucfirst($row['status']),
+            ucfirst($row['payment_status'] ?? 'unpaid'),
+            $row['customer_notes'] ?? ''
+        ]);
+    }
+
+    fclose($output);
+    exit;
+}
+
 // Handle Order Status Update
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_status') {
     verify_csrf();
     $orderId = filter_input(INPUT_POST, 'order_id', FILTER_VALIDATE_INT);
     $newStatus = trim((string)($_POST['status'] ?? ''));
+    $newPaymentStatus = trim((string)($_POST['payment_status'] ?? ''));
 
     $validStatuses = ['pending', 'confirmed', 'processing', 'completed', 'cancelled'];
+    $validPayment = ['unpaid', 'paid', 'refunded'];
+
     if ($orderId && in_array($newStatus, $validStatuses, true)) {
-        $upd = db()->prepare('UPDATE orders SET status = ? WHERE id = ? AND shop_id = ?');
-        $upd->execute([$newStatus, $orderId, $shopId]);
+        if (in_array($newPaymentStatus, $validPayment, true)) {
+            $upd = db()->prepare('UPDATE orders SET status = ?, payment_status = ? WHERE id = ? AND shop_id = ?');
+            $upd->execute([$newStatus, $newPaymentStatus, $orderId, $shopId]);
+        } else {
+            $upd = db()->prepare('UPDATE orders SET status = ? WHERE id = ? AND shop_id = ?');
+            $upd->execute([$newStatus, $orderId, $shopId]);
+        }
         log_audit('order_status_update', "Updated order #{$orderId} status to {$newStatus}", $shopId);
         set_flash('success', "Order status updated to " . ucfirst($newStatus));
     }
@@ -109,13 +180,43 @@ if (isset($_GET['view'])) {
         <!-- Order Status and Customer Card -->
         <div style="display: flex; flex-direction: column; gap: 20px;">
           <div class="card" style="padding: 24px;">
-            <h3 style="font-size: 16px; margin-bottom: 14px;">Lifecycle Status</h3>
+            <h3 style="font-size: 16px; margin-bottom: 14px;">Customer & Delivery</h3>
+            <div style="font-size: 13px; line-height: 1.6; margin-bottom: 16px;">
+              <div><strong>Name:</strong> <?= e($order['customer_name'] ?: 'Not provided') ?></div>
+              <div><strong>Phone:</strong> <?= e($order['customer_phone'] ?: 'Not provided') ?></div>
+              <?php if (!empty($order['customer_email'])): ?>
+                <div><strong>Email:</strong> <?= e($order['customer_email']) ?></div>
+              <?php endif; ?>
+              <?php if (!empty($order['customer_address'])): ?>
+                <div style="margin-top: 6px;"><strong>Delivery Address:</strong><br><span style="color: var(--text-muted);"><?= nl2br(e($order['customer_address'])) ?></span></div>
+              <?php endif; ?>
+              <?php if (!empty($order['customer_notes'])): ?>
+                <div style="margin-top: 6px;"><strong>Order Notes:</strong><br><span style="color: var(--text-muted);"><?= nl2br(e($order['customer_notes'])) ?></span></div>
+              <?php endif; ?>
+            </div>
+
+            <h3 style="font-size: 16px; margin: 16px 0 10px; padding-top: 14px; border-top: 1px solid var(--border-light);">Payment Status</h3>
+            <div style="margin-bottom: 16px;">
+              <?php
+                $pBadge = match($order['payment_status'] ?? 'unpaid') {
+                  'paid' => 'badge-success',
+                  'refunded' => 'badge-danger',
+                  default => 'badge-warning'
+                };
+              ?>
+              <span class="badge <?= $pBadge ?>" style="font-size: 13px; padding: 4px 10px;">
+                <?= strtoupper(e($order['payment_status'] ?? 'unpaid')) ?>
+              </span>
+            </div>
+
+            <h3 style="font-size: 16px; margin-bottom: 14px; padding-top: 14px; border-top: 1px solid var(--border-light);">Update Status</h3>
             <form method="post" action="<?= base_url('admin/orders.php') ?>">
               <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
               <input type="hidden" name="action" value="update_status">
               <input type="hidden" name="order_id" value="<?= (int)$order['id'] ?>">
 
               <div class="form-group">
+                <label class="form-label" style="font-size: 12px;">Order Fulfilment</label>
                 <select class="form-control" name="status">
                   <option value="pending" <?= $order['status'] === 'pending' ? 'selected' : '' ?>>Pending Review</option>
                   <option value="confirmed" <?= $order['status'] === 'confirmed' ? 'selected' : '' ?>>Confirmed</option>
@@ -125,8 +226,17 @@ if (isset($_GET['view'])) {
                 </select>
               </div>
 
+              <div class="form-group">
+                <label class="form-label" style="font-size: 12px;">Payment Status</label>
+                <select class="form-control" name="payment_status">
+                  <option value="unpaid" <?= ($order['payment_status'] ?? '') === 'unpaid' ? 'selected' : '' ?>>Unpaid</option>
+                  <option value="paid" <?= ($order['payment_status'] ?? '') === 'paid' ? 'selected' : '' ?>>Paid (Confirmed)</option>
+                  <option value="refunded" <?= ($order['payment_status'] ?? '') === 'refunded' ? 'selected' : '' ?>>Refunded</option>
+                </select>
+              </div>
+
               <button class="btn btn-primary btn-sm" type="submit" style="width: 100%;">
-                Update Status
+                Save Changes
               </button>
             </form>
           </div>
@@ -139,6 +249,14 @@ if (isset($_GET['view'])) {
             <div style="padding: 10px 14px; background-color: var(--bg-subtle); border-radius: var(--radius-sm); font-size: 12px; color: var(--text-subtle);">
               Store WhatsApp: +<?= e($shop['whatsapp_number']) ?>
             </div>
+            <?php if (!empty($order['customer_phone'])): ?>
+              <div style="margin-top: 10px;">
+                <a href="https://wa.me/<?= preg_replace('/\D/', '', $order['customer_phone']) ?>?text=<?= urlencode("Hello " . ($order['customer_name'] ?: 'there') . "! Regarding your order " . $order['reference'] . "...") ?>" target="_blank" class="btn btn-secondary btn-sm" style="width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px;">
+                  <?= icon('whatsapp', 'icon-sm') ?>
+                  <span>Chat With Customer</span>
+                </a>
+              </div>
+            <?php endif; ?>
           </div>
         </div>
       </div>
@@ -180,6 +298,12 @@ include __DIR__ . '/../templates/admin_header.php';
   <div>
     <span class="eyebrow">ORDER MANAGEMENT</span>
     <h1 style="font-size: 26px;">Recorded Storefront Orders (<?= count($orders) ?>)</h1>
+  </div>
+  <div>
+    <a href="<?= base_url('admin/orders.php?action=export_csv') ?>" class="btn btn-secondary btn-sm" style="display: flex; align-items: center; gap: 6px;">
+      <?= icon('external', 'icon-sm') ?>
+      <span>Export CSV (Excel / Sheets)</span>
+    </a>
   </div>
 </div>
 
@@ -224,8 +348,10 @@ include __DIR__ . '/../templates/admin_header.php';
           <tr>
             <th>Order Ref</th>
             <th>Date</th>
+            <th>Customer</th>
             <th>Items</th>
             <th>Total Amount</th>
+            <th>Payment</th>
             <th>Status</th>
             <th style="text-align: right;">Action</th>
           </tr>
@@ -250,6 +376,12 @@ include __DIR__ . '/../templates/admin_header.php';
                 'completed' => 'badge-success',
                 'cancelled' => 'badge-danger',
             ];
+
+            $payBadges = [
+                'paid' => 'badge-success',
+                'unpaid' => 'badge-warning',
+                'refunded' => 'badge-danger',
+            ];
           ?>
             <tr>
               <td>
@@ -258,8 +390,17 @@ include __DIR__ . '/../templates/admin_header.php';
                 </a>
               </td>
               <td><?= date('M j, Y H:i', strtotime($ord['created_at'])) ?></td>
+              <td>
+                <div style="font-weight: 600;"><?= e($ord['customer_name'] ?: 'Guest') ?></div>
+                <div style="font-size: 12px; color: var(--text-muted);"><?= e($ord['customer_phone'] ?: '') ?></div>
+              </td>
               <td><?= e($summary) ?></td>
               <td><strong><?= format_currency((float)$ord['total'], $ord['currency'] ?? $shop['currency']) ?></strong></td>
+              <td>
+                <span class="badge <?= $payBadges[$ord['payment_status'] ?? 'unpaid'] ?? 'badge-warning' ?>">
+                  <?= ucfirst(e($ord['payment_status'] ?? 'unpaid')) ?>
+                </span>
+              </td>
               <td>
                 <span class="badge <?= $statusBadges[$ord['status']] ?? 'badge-neutral' ?>">
                   <?= ucfirst(e($ord['status'])) ?>

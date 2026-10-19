@@ -48,9 +48,24 @@ $whatsapp = preg_replace('/\D+/', '', (string)$shop['whatsapp_number']);
       --accent: <?= e($accentColor) ?>;
       --accent-hover: <?= e($accentColor) ?>;
     }
+    .cart-badge {
+      position: absolute;
+      top: -6px;
+      right: -8px;
+      background: var(--accent);
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      border-radius: 999px;
+      padding: 2px 7px;
+      min-width: 18px;
+      text-align: center;
+      line-height: 1.2;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+    }
   </style>
 </head>
-<body>
+<body data-shop-slug="<?= e($shop['slug']) ?>" data-currency="<?= e($currency) ?>">
 
 <!-- Storefront Top Bar -->
 <header class="site-nav">
@@ -65,6 +80,13 @@ $whatsapp = preg_replace('/\D+/', '', (string)$shop['whatsapp_number']);
     </a>
 
     <div class="nav-actions">
+      <!-- Shopping Cart Button with Dynamic Badge -->
+      <button class="btn btn-secondary btn-sm" id="cartToggleBtn" type="button" style="position: relative; display: flex; align-items: center; gap: 8px;">
+        <?= icon('cart', 'icon-sm') ?>
+        <span style="font-weight: 600;">Cart</span>
+        <span class="cart-badge" id="cartCountBadge" style="display: none;">0</span>
+      </button>
+
       <button class="btn btn-icon theme-toggle-btn" type="button" aria-label="Toggle Theme">
         <?= icon('sun', 'icon-sm') ?>
       </button>
@@ -100,16 +122,34 @@ $whatsapp = preg_replace('/\D+/', '', (string)$shop['whatsapp_number']);
     <?php endif; ?>
 
     <?php if (!empty($shop['description'])): ?>
-      <p style="color: var(--text-muted); font-size: 14px; max-width: 680px; line-height: 1.6;"><?= nl2br(e($shop['description'])) ?></p>
+      <p style="max-width: 680px; color: var(--text-muted); line-height: 1.6; margin-bottom: 24px; font-size: 15px;">
+        <?= nl2br(e($shop['description'])) ?>
+      </p>
     <?php endif; ?>
+
+    <div style="display: flex; flex-wrap: wrap; gap: 16px; align-items: center;">
+      <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-muted);">
+        <?= icon('check', 'icon-sm') ?>
+        <span>Direct WhatsApp Ordering</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-muted);">
+        <?= icon('check', 'icon-sm') ?>
+        <span>Live Stock Availability</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-muted);">
+        <?= icon('check', 'icon-sm') ?>
+        <span>Instant Order Confirmation</span>
+      </div>
+    </div>
   </div>
 </section>
 
-<!-- Catalogue Navigation: Live Search & Category Pills -->
+<!-- Main Catalogue Section -->
 <main class="container" style="padding-top: 40px; padding-bottom: 80px;">
-  <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 20px; margin-bottom: 32px;">
-    <!-- Category Filter Pills -->
-    <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+  <!-- Filter & Search Toolbar -->
+  <div style="display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 32px;">
+    <!-- Category pills -->
+    <div style="display: flex; flex-wrap: wrap; gap: 8px;" id="categoryFilterContainer">
       <button class="btn btn-sm btn-primary category-filter-btn active" data-category-slug="all" type="button">
         All Items (<?= count($products) ?>)
       </button>
@@ -158,31 +198,47 @@ $whatsapp = preg_replace('/\D+/', '', (string)$shop['whatsapp_number']);
         <div class="catalog-content">
           <div class="catalog-meta">
             <span class="badge badge-neutral" style="font-size: 11px;"><?= e($p['category'] ?: 'General') ?></span>
-            <span style="font-size: 12px; color: var(--color-success); font-weight: 600;">In Stock</span>
+            <span style="font-size: 12px; color: var(--color-success); font-weight: 600;">In Stock (<?= (int)$p['stock'] ?>)</span>
           </div>
 
           <h2 class="catalog-title"><?= e($p['name']) ?></h2>
           <p class="catalog-desc"><?= e($p['description'] ?: 'High quality crafted merchandise ready for immediate dispatch.') ?></p>
 
-          <div class="catalog-bottom">
+          <div class="catalog-bottom" style="flex-wrap: wrap; gap: 10px;">
             <div>
               <div style="font-size: 11px; color: var(--text-subtle); text-transform: uppercase;">Price</div>
               <div class="catalog-price"><?= format_currency((float)$p['price'], $currency) ?></div>
             </div>
 
-            <!-- WhatsApp Order Submission Form -->
-            <form method="post" action="<?= base_url('order.php?shop=' . urlencode($shop['slug'])) ?>" target="_blank" style="display: flex; align-items: center; gap: 8px;">
-              <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
-              <input type="hidden" name="product_id" value="<?= (int)$p['id'] ?>">
-
+            <!-- Two convenient actions: Add to Cart & Buy 1-Click Now -->
+            <div style="display: flex; align-items: center; gap: 6px;">
               <label class="sr-only" for="qty-<?= (int)$p['id'] ?>">Quantity</label>
-              <input id="qty-<?= (int)$p['id'] ?>" class="form-control" name="quantity" type="number" min="1" max="<?= (int)$p['stock'] ?>" value="1" style="width: 58px; padding: 6px 8px; text-align: center;" title="Quantity">
+              <input id="qty-<?= (int)$p['id'] ?>" class="form-control" name="quantity" type="number" min="1" max="<?= (int)$p['stock'] ?>" value="1" style="width: 52px; padding: 6px 6px; text-align: center; font-size: 13px;" title="Quantity">
 
-              <button class="btn btn-whatsapp btn-sm" type="submit" title="Order via WhatsApp">
-                <?= icon('whatsapp', 'icon-sm') ?>
-                <span>Order</span>
+              <!-- Add to Cart -->
+              <button class="btn btn-secondary btn-sm add-to-cart-btn" type="button"
+                      data-product-id="<?= (int)$p['id'] ?>"
+                      data-product-name="<?= e($p['name']) ?>"
+                      data-product-price="<?= (float)$p['price'] ?>"
+                      data-product-stock="<?= (int)$p['stock'] ?>"
+                      data-qty-input="qty-<?= (int)$p['id'] ?>"
+                      title="Add to shopping cart">
+                <?= icon('cart', 'icon-sm') ?>
+                <span>+ Cart</span>
               </button>
-            </form>
+
+              <!-- Buy / Order Now (Direct 1 item) -->
+              <button class="btn btn-whatsapp btn-sm order-single-btn" type="button" 
+                      data-product-id="<?= (int)$p['id'] ?>"
+                      data-product-name="<?= e($p['name']) ?>"
+                      data-product-price="<?= (float)$p['price'] ?>"
+                      data-product-stock="<?= (int)$p['stock'] ?>"
+                      data-qty-input="qty-<?= (int)$p['id'] ?>"
+                      title="Order this single item via WhatsApp">
+                <?= icon('whatsapp', 'icon-sm') ?>
+                <span>Buy Now</span>
+              </button>
+            </div>
           </div>
         </div>
       </article>
@@ -204,6 +260,98 @@ $whatsapp = preg_replace('/\D+/', '', (string)$shop['whatsapp_number']);
     </div>
   <?php endif; ?>
 </main>
+
+<!-- Shopping Cart Drawer / Modal -->
+<div id="cartModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 1000; align-items: center; justify-content: center; padding: 20px; backdrop-filter: blur(4px);">
+  <div class="card" style="width: 100%; max-width: 520px; max-height: 90vh; display: flex; flex-direction: column; padding: 0; overflow: hidden; box-shadow: var(--shadow-lg);">
+    <!-- Cart Header -->
+    <div style="padding: 20px 24px; border-bottom: 1px solid var(--border-light); display: flex; justify-content: space-between; align-items: center;">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span style="color: var(--accent);"><?= icon('cart', 'icon') ?></span>
+        <h2 style="font-size: 18px; margin: 0;">Shopping Cart</h2>
+      </div>
+      <button type="button" id="closeCartModal" style="background: none; border: none; font-size: 24px; line-height: 1; cursor: pointer; color: var(--text-muted);">&times;</button>
+    </div>
+
+    <!-- Cart Items List Container -->
+    <div id="cartItemsList" style="padding: 20px 24px; overflow-y: auto; flex: 1; min-height: 160px; max-height: 40vh;">
+      <!-- Populated via JavaScript -->
+    </div>
+
+    <!-- Cart Footer with Totals and Checkout CTA -->
+    <div style="padding: 20px 24px; border-top: 1px solid var(--border-light); background: var(--bg-subtle);">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <span style="font-size: 14px; font-weight: 600; color: var(--text-muted);">Cart Subtotal:</span>
+        <span id="cartGrandTotal" style="font-size: 20px; font-weight: 800; color: var(--accent);"><?= e($currency) ?> 0.00</span>
+      </div>
+
+      <div style="display: flex; gap: 10px; justify-content: flex-end;">
+        <button type="button" class="btn btn-secondary btn-sm" id="clearCartBtn">Clear Cart</button>
+        <button type="button" class="btn btn-whatsapp" id="cartProceedCheckoutBtn" style="display: flex; align-items: center; gap: 8px;">
+          <?= icon('whatsapp', 'icon-sm') ?>
+          <span>Checkout via WhatsApp</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Customer Checkout Details Modal (Used for both Multi-item Cart Checkout and Single Buy Now) -->
+<div id="orderModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.65); z-index: 1010; align-items: center; justify-content: center; padding: 20px; backdrop-filter: blur(4px);">
+  <div class="card" style="width: 100%; max-width: 480px; max-height: 90vh; overflow-y: auto; position: relative; padding: 28px; box-shadow: var(--shadow-lg);">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px;">
+      <div>
+        <span class="eyebrow">ORDER CONFIRMATION</span>
+        <h2 id="modalProductName" style="font-size: 20px; margin: 4px 0 0;">Checkout Order</h2>
+        <div id="modalProductSummary" style="font-size: 14px; color: var(--accent); font-weight: 700; margin-top: 4px;"></div>
+      </div>
+      <button type="button" id="closeOrderModal" style="background: none; border: none; font-size: 24px; line-height: 1; cursor: pointer; color: var(--text-muted);">&times;</button>
+    </div>
+
+    <form method="post" action="<?= base_url('order.php?shop=' . urlencode($shop['slug'])) ?>" target="_blank" id="modalOrderForm">
+      <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+      <!-- Single order fields -->
+      <input type="hidden" name="product_id" id="modalProductId" value="">
+      <input type="hidden" name="quantity" id="modalQuantity" value="1">
+      <!-- Multi-item cart JSON payload -->
+      <input type="hidden" name="cart_items" id="modalCartItemsJson" value="">
+
+      <div class="form-group" style="margin-bottom: 14px;">
+        <label class="form-label" for="cust_name" style="font-size: 13px;">Your Name *</label>
+        <input class="form-control" type="text" id="cust_name" name="customer_name" required placeholder="e.g. Jane Doe">
+      </div>
+
+      <div class="form-row" style="margin-bottom: 14px;">
+        <div class="form-group">
+          <label class="form-label" for="cust_phone" style="font-size: 13px;">Phone / WhatsApp *</label>
+          <input class="form-control" type="tel" id="cust_phone" name="customer_phone" required placeholder="e.g. 0712 345 678">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="cust_email" style="font-size: 13px;">Email (For receipt)</label>
+          <input class="form-control" type="email" id="cust_email" name="customer_email" placeholder="jane@example.com">
+        </div>
+      </div>
+
+      <div class="form-group" style="margin-bottom: 14px;">
+        <label class="form-label" for="cust_address" style="font-size: 13px;">Delivery Address / Town</label>
+        <textarea class="form-control" id="cust_address" name="customer_address" rows="2" placeholder="Building, Street, Area or Pickup point..."></textarea>
+      </div>
+
+      <div class="form-group" style="margin-bottom: 20px;">
+        <label class="form-label" for="cust_notes" style="font-size: 13px;">Special Instructions / Size / Color</label>
+        <input class="form-control" type="text" id="cust_notes" name="customer_notes" placeholder="e.g. Size M, Black, delivery after 2 PM">
+      </div>
+
+      <div style="display: flex; gap: 12px; justify-content: flex-end; align-items: center; border-top: 1px solid var(--border-light); padding-top: 16px;">
+        <button type="button" class="btn btn-secondary btn-sm" id="cancelOrderModal">Back</button>
+        <button type="submit" class="btn btn-whatsapp" style="display: flex; align-items: center; gap: 8px;">
+          <?= icon('whatsapp', 'icon-sm') ?>
+          <span>Send Order via WhatsApp</span>
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
 
 <!-- Storefront Footer -->
 <footer style="background-color: var(--bg-surface); border-top: 1px solid var(--border-light); padding: 40px 0; font-size: 13px; color: var(--text-muted);">
